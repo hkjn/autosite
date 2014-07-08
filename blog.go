@@ -24,10 +24,11 @@
 // Special handlers for listing posts will be registered, using
 // "base.tmpl" and "listing.tmpl":
 //   * the index (/) will show all posts from all years.
-//   * for each year DDDD that has at least one blog post, /DDDD will
-//     be registered for that year.
-//   * for each year + month DDDD/MM that have at least one blog post,
-//     /DDDD/MM will be registered for that year + month.
+//   * for each year YYYY that has at least one blog post, /YYYY will
+//     be registered, showing all posts from that year.
+//   * for each year + month YYYY/MM that have at least one blog post,
+//     /YYYY/MM will be registered, showing all posts from that month
+//     in that year.
 //
 // Within the templates for these "blog listing" handlers, the following
 // data is available in addition to the usual:
