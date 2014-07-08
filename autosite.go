@@ -1,6 +1,9 @@
 // Package autosite defines Google App Engine sites automatically
 // based on file structure.
 //
+// See https://github.com/hkjn/hkjnweb for the setup baesd on this
+// package that implements http://www.hkjn.me / http://blog.hkjn.me.
+//
 // Example usage:
 //   mysite := New(
 //     "Some title",   // for HTML <head>
