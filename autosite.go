@@ -26,7 +26,11 @@
 //   {{.Date.Year}}, {{.Date.Month}}: Year and month that the page was
 //      published, if file pattern includes it.
 //   {{.URI}}: URI to the page.
-//   {{.IsLive}}: Whether the page is live, via !appengine.IsDevAppServer().
+//
+// The following functions are available within templates, in addition
+// to the usual ones:
+//   {{live}}: Whether the page is live, via !appengine.IsDevAppServer().
+//   {{domain}}: When live, the live domain of the page, otherwise empty string.
 package autosite
 
 import (
@@ -48,12 +52,12 @@ var BaseTemplate = "base"
 // New creates a new autosite.
 //
 // New panics on errors reading templates.
-func New(title, glob, live string, templates []string) Site {
+func New(title, glob, liveDomain string, templates []string) Site {
 	s := Site{
-		title:     title,
-		live:      live,
-		glob:      glob,
-		templates: templates,
+		title:      title,
+		liveDomain: liveDomain,
+		glob:       glob,
+		templates:  templates,
 	}
 	err := s.read()
 	if err != nil {
@@ -82,7 +86,7 @@ func (s Site) Register() {
 		if appengine.IsDevAppServer() {
 			http.Handle(uri, p)
 		} else {
-			http.Handle(fmt.Sprintf("%s%s", s.live, p.URI), p)
+			http.Handle(fmt.Sprintf("%s%s", s.liveDomain, p.URI), p)
 		}
 		log.Printf("registered handler %s: %+v\n", p.URI, p)
 	}
@@ -90,20 +94,19 @@ func (s Site) Register() {
 
 // Site represents an autosite.
 type Site struct {
-	live      string          // live domain
-	title     string          // title of the domain, for HTML <head>
-	glob      string          // file glob for page templates
-	templates []string        // templates needed for all endpoints
-	pages     map[string]page // URI -> page mapping
+	liveDomain string          // live domain
+	title      string          // title of the site, for HTML <head>
+	glob       string          // file glob for page templates
+	templates  []string        // templates needed for all endpoints
+	pages      map[string]page // URI -> page mapping
 }
 
 // page is a HTML resource.
 type page struct {
-	Title  string      // title, for <head>
-	Date   date        // publishing date
-	URI    string      // URI path
-	IsLive bool        // true if the site is live
-	Data   interface{} // custom data, if any
+	Title string      // title, for <head>
+	Date  date        // publishing date
+	URI   string      // URI path
+	Data  interface{} // custom data, if any
 
 	tmpl *template.Template // backing template
 }
@@ -236,16 +239,31 @@ func getDate(y, m string) (date, error) {
 	}, nil
 }
 
+// getFuncs constructs a map for the extra template functions.
+func (s Site) getFuncs() template.FuncMap {
+	isLive := func() bool {
+		return !appengine.IsDevAppServer()
+	}
+	return template.FuncMap{
+		"live": isLive,
+		"domain": func() string {
+			if isLive() {
+				return s.liveDomain
+			}
+			return ""
+		},
+	}
+}
+
 // addPage adds a page to the autosite.
 func (s *Site) addPage(uri string, d date, data interface{}, tmpls []string) {
-	t := template.Must(template.ParseFiles(tmpls...))
+	t := template.Must(template.New(BaseTemplate).Funcs(s.getFuncs()).ParseFiles(tmpls...))
 	p := page{
-		Title:  s.title,
-		URI:    uri,
-		Data:   data,
-		Date:   d,
-		IsLive: !appengine.IsDevAppServer(),
-		tmpl:   t,
+		Title: s.title,
+		URI:   uri,
+		Data:  data,
+		Date:  d,
+		tmpl:  t,
 	}
 	s.pages[p.URI] = p
 }
