@@ -42,6 +42,9 @@ import (
 	"appengine"
 )
 
+// BaseTemplate is the name of the top-level template to invoke for each page.
+var BaseTemplate = "base"
+
 // New creates a new autosite.
 //
 // New panics on errors reading templates.
@@ -134,7 +137,7 @@ func (p page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := p.tmpl.ExecuteTemplate(w, "base", p)
+	err := p.tmpl.ExecuteTemplate(w, BaseTemplate, p)
 	if err != nil {
 		http.Error(w, "Internal server error.", http.StatusInternalServerError)
 		log.Fatal(err.Error())
