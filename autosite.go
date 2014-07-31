@@ -80,6 +80,22 @@ func (s *Site) ChangeURI(uri, newURI string) {
 	log.Printf("remapped %v to %v\n", p, newURI)
 }
 
+// AddRedirect registers an URI that redirects.
+//
+// AddRedirect panics if the URI already is taken.
+func (s *Site) AddRedirect(uri, redirectURI string) {
+	p, exists := s.pages[uri]
+	if exists {
+		log.Fatalf("page %v already is registered for URI %s\n", p, uri)
+	}
+	s.pages[uri] = page{
+		Title:       s.title,
+		URI:         uri,
+		redirectURI: redirectURI,
+	}
+	log.Printf("added redirect on %s to %s\n", uri, redirectURI)
+}
+
 // Register registers the HTTP handlers for the site.
 func (s Site) Register() {
 	for uri, p := range s.pages {
@@ -108,7 +124,8 @@ type page struct {
 	URI   string      // URI path
 	Data  interface{} // custom data, if any
 
-	tmpl *template.Template // backing template
+	redirectURI string             // URI to redirect to
+	tmpl        *template.Template // backing template
 }
 
 type year int
@@ -137,6 +154,11 @@ func (p page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.URI != r.RequestURI {
 		c.Errorf("bad request URI %s, want %s; serving 404\n", r.RequestURI, p.URI)
 		http.NotFound(w, r)
+		return
+	}
+	if p.redirectURI != "" {
+		c.Infof("redirecting %s to %s\n", r.RequestURI, p.redirectURI)
+		http.Redirect(w, r, p.redirectURI, http.StatusFound)
 		return
 	}
 
@@ -257,13 +279,15 @@ func (s Site) getFuncs() template.FuncMap {
 
 // addPage adds a page to the autosite.
 func (s *Site) addPage(uri string, d date, data interface{}, tmpls []string) {
-	t := template.Must(template.New(BaseTemplate).Funcs(s.getFuncs()).ParseFiles(tmpls...))
-	p := page{
+	var t *template.Template
+	if len(tmpls) > 0 {
+		t = template.Must(template.New(BaseTemplate).Funcs(s.getFuncs()).ParseFiles(tmpls...))
+	}
+	s.pages[uri] = page{
 		Title: s.title,
 		URI:   uri,
 		Data:  data,
 		Date:  d,
 		tmpl:  t,
 	}
-	s.pages[p.URI] = p
 }
