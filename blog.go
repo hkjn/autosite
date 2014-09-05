@@ -1,4 +1,4 @@
-// Support for blogs
+// Support for blogs in autosite.
 //
 // Example usage:
 //   myblog := NewBlog(
@@ -48,25 +48,30 @@ import (
 // NewBlog creates a new blog.
 //
 // NewBlog panics on errors reading templates.
-func NewBlog(title, glob, live string, articleTmpls []string, listingTmpls []string) Blog {
-	b := Blog{New(title, glob, live, articleTmpls)}
+func NewBlog(title, glob, live string, articleTmpls []string, listingTmpls []string, logger LoggerFunc, isLive bool) Site {
+	b := blog{internalNew(title, glob, live, articleTmpls, logger, isLive)}
 	b.addHandlers(listingTmpls)
-	return b
+	return &b
 }
 
-// Blog is a type of autosite.
-type Blog struct {
-	s Site // backing autosite
+// blog is a type of autosite.
+type blog struct {
+	s site // backing site.
 }
 
 // Register registers the HTTP handlers for the blog.
-func (b *Blog) Register() {
+func (b *blog) Register() {
 	b.s.Register()
 }
 
 // ChangeURI changes the URI a page will be served on.
-func (b *Blog) ChangeURI(uri, newURI string) {
+func (b *blog) ChangeURI(uri, newURI string) {
 	b.s.ChangeURI(uri, newURI)
+}
+
+// AddRedirect registers an URI that redirects.
+func (b *blog) AddRedirect(uri, newURI string) {
+	b.s.AddRedirect(uri, newURI)
 }
 
 // pageData is the data needed to serve a listing page.
@@ -98,7 +103,7 @@ func (p posts) Swap(i, j int) {
 }
 
 // addListing adds a listing of blog posts.
-func (b *Blog) addListing(uri string, tfmt string, p posts, listingTmpls []string) {
+func (b *blog) addListing(uri string, tfmt string, p posts, listingTmpls []string) {
 	data := pageData{
 		TimeUnit: tfmt,
 		Posts:    p,
@@ -107,7 +112,7 @@ func (b *Blog) addListing(uri string, tfmt string, p posts, listingTmpls []strin
 }
 
 // byMonth accumulates a map of year -> month -> posts.
-func (b Blog) listingData() listingData {
+func (b blog) listingData() listingData {
 	byDate := make(map[date]posts)
 	byYear := make(map[year]posts)
 	for uri, p := range b.s.pages {
@@ -123,7 +128,7 @@ func (b Blog) listingData() listingData {
 }
 
 // addHandlers registers custom handlers for the blog.
-func (b *Blog) addHandlers(listingTmpls []string) {
+func (b *blog) addHandlers(listingTmpls []string) {
 	data := b.listingData()
 	for d, inDate := range data.byDate {
 		sort.Sort(sort.Reverse(inDate))

@@ -1,5 +1,5 @@
-// Package autosite defines Google App Engine sites automatically
-// based on file structure.
+// Package autosite hosts websites automatically based on file
+// structure.
 //
 // See https://github.com/hkjn/hkjnweb for a setup (that implements
 // http://www.hkjn.me / http://blog.hkjn.me) using this package.
@@ -13,6 +13,10 @@
 //       "base.tmpl",
 //       "other.tmpl",
 //     },
+//     func(r *http.Request) Logger {
+//       return appengine.NewContext(r)
+//     },
+//     !appengine.IsDevAppServer(),
 //   )
 //   mysite.Register()
 //
@@ -52,12 +56,20 @@ var BaseTemplate = "base"
 // New creates a new autosite.
 //
 // New panics on errors reading templates.
-func New(title, glob, liveDomain string, templates []string) Site {
-	s := Site{
+func New(title, glob, liveDomain string, templates []string, logger LoggerFunc, isLive bool) Site {
+	s := internalNew(title, glob, liveDomain, templates, logger, isLive)
+	return &s
+}
+
+// internalNew creates the concrete site.
+func internalNew(title, glob, liveDomain string, templates []string, logger LoggerFunc, isLive bool) site {
+	s := site{
 		title:      title,
 		liveDomain: liveDomain,
 		glob:       glob,
 		templates:  templates,
+		logger:     logger,
+		isLive:     isLive,
 	}
 	err := s.read()
 	if err != nil {
@@ -69,7 +81,7 @@ func New(title, glob, liveDomain string, templates []string) Site {
 // ChangeURI changes the URI a page will be served on.
 //
 // ChangeURI panics if the old URI is not registered.
-func (s *Site) ChangeURI(uri, newURI string) {
+func (s *site) ChangeURI(uri, newURI string) {
 	p, ok := s.pages[uri]
 	if !ok {
 		log.Fatalf("no page with URI %v\n", uri)
@@ -83,7 +95,7 @@ func (s *Site) ChangeURI(uri, newURI string) {
 // AddRedirect registers an URI that redirects.
 //
 // AddRedirect panics if the URI already is taken.
-func (s *Site) AddRedirect(uri, redirectURI string) {
+func (s *site) AddRedirect(uri, redirectURI string) {
 	p, exists := s.pages[uri]
 	if exists {
 		log.Fatalf("page %v already is registered for URI %s\n", p, uri)
@@ -97,23 +109,31 @@ func (s *Site) AddRedirect(uri, redirectURI string) {
 }
 
 // Register registers the HTTP handlers for the site.
-func (s Site) Register() {
+func (s site) Register() {
 	for uri, p := range s.pages {
-		if appengine.IsDevAppServer() {
-			http.Handle(uri, p)
-		} else {
-			http.Handle(fmt.Sprintf("%s%s", s.liveDomain, p.URI), p)
+		if s.isLive {
+			uri = fmt.Sprintf("%s%s", s.liveDomain, p.URI)
 		}
-		log.Printf("registered handler %s: %+v\n", p.URI, p)
+		http.Handle(uri, p)
+		log.Printf("registered handler %s: %+v\n", uri, p)
 	}
 }
 
-// Site represents an autosite.
-type Site struct {
+// Site represents a website.
+type Site interface {
+	Register()                           // Registers the HTTP handlers for the site.
+	ChangeURI(oldURI, newURI string)     // Changes an URI.
+	AddRedirect(uri, redirectURI string) // Adds a redirect URI.
+}
+
+// site is a website representation.
+type site struct {
 	liveDomain string          // live domain
 	title      string          // title of the site, for HTML <head>
 	glob       string          // file glob for page templates
 	templates  []string        // templates needed for all endpoints
+	isLive     bool            // whether the site is live
+	logger     LoggerFunc      // func to retrieve logger
 	pages      map[string]page // URI -> page mapping
 }
 
@@ -126,6 +146,7 @@ type page struct {
 
 	redirectURI string             // URI to redirect to
 	tmpl        *template.Template // backing template
+	logger      LoggerFunc         // func to retrieve lgoger
 }
 
 type year int
@@ -148,16 +169,16 @@ func (d date) before(other date) bool {
 
 // ServeHTTP serves the page.
 func (p page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c := appengine.NewContext(r)
-	c.Infof("%+v will ServeHTTP for URI %s\n", p, r.RequestURI)
+	l := p.logger(r)
+	l.Infof("%+v will ServeHTTP for URI %s\n", p, r.RequestURI)
 
 	if p.URI != r.RequestURI {
-		c.Errorf("bad request URI %s, want %s; serving 404\n", r.RequestURI, p.URI)
+		l.Errorf("bad request URI %s, want %s; serving 404\n", r.RequestURI, p.URI)
 		http.NotFound(w, r)
 		return
 	}
 	if p.redirectURI != "" {
-		c.Infof("redirecting %s to %s\n", r.RequestURI, p.redirectURI)
+		l.Infof("redirecting %s to %s\n", r.RequestURI, p.redirectURI)
 		http.Redirect(w, r, p.redirectURI, http.StatusFound)
 		return
 	}
@@ -165,7 +186,7 @@ func (p page) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err := p.tmpl.ExecuteTemplate(w, BaseTemplate, p)
 	if err != nil {
 		http.Error(w, "Internal server error.", http.StatusInternalServerError)
-		log.Fatal(err.Error())
+		l.Criticalf(err.Error())
 		return
 	}
 }
@@ -183,7 +204,7 @@ func (p page) String() string {
 }
 
 // read reads pages to serve on the autosite from disk
-func (s *Site) read() error {
+func (s *site) read() error {
 	filePaths, err := s.getFiles()
 	if err != nil {
 		return err
@@ -200,7 +221,7 @@ func (s *Site) read() error {
 }
 
 // getFiles retrieves all pages' file paths from disk.
-func (s Site) getFiles() ([]string, error) {
+func (s site) getFiles() ([]string, error) {
 	paths, err := filepath.Glob(s.glob)
 	if err != nil {
 		return []string{}, err
@@ -245,24 +266,8 @@ func parsePath(p string) (uri string, d date, err error) {
 	return uri, d, nil
 }
 
-// getDate extracts the date of the post from year and month strings.
-func getDate(y, m string) (date, error) {
-	y64, err := strconv.ParseInt(y, 10, 0)
-	if err != nil || y64 <= 1900 || y64 >= 99999 {
-		return date{}, fmt.Errorf("bad year: %v", y)
-	}
-	month, err := strconv.ParseInt(m, 10, 0)
-	if err != nil || month < 1 || month > 12 {
-		return date{}, fmt.Errorf("bad month: %v", m)
-	}
-	return date{
-		Year:  year(y64),
-		Month: time.Month(month),
-	}, nil
-}
-
 // getFuncs constructs a map for the extra template functions.
-func (s Site) getFuncs() template.FuncMap {
+func (s site) getFuncs() template.FuncMap {
 	isLive := func() bool {
 		return !appengine.IsDevAppServer()
 	}
@@ -278,16 +283,33 @@ func (s Site) getFuncs() template.FuncMap {
 }
 
 // addPage adds a page to the autosite.
-func (s *Site) addPage(uri string, d date, data interface{}, tmpls []string) {
+func (s *site) addPage(uri string, d date, data interface{}, tmpls []string) {
 	var t *template.Template
 	if len(tmpls) > 0 {
 		t = template.Must(template.New(BaseTemplate).Funcs(s.getFuncs()).ParseFiles(tmpls...))
 	}
 	s.pages[uri] = page{
-		Title: s.title,
-		URI:   uri,
-		Data:  data,
-		Date:  d,
-		tmpl:  t,
+		Title:  s.title,
+		URI:    uri,
+		Data:   data,
+		Date:   d,
+		tmpl:   t,
+		logger: s.logger,
 	}
+}
+
+// getDate extracts the date of the post from year and month strings.
+func getDate(y, m string) (date, error) {
+	y64, err := strconv.ParseInt(y, 10, 0)
+	if err != nil || y64 <= 1900 || y64 >= 99999 {
+		return date{}, fmt.Errorf("bad year: %v", y)
+	}
+	month, err := strconv.ParseInt(m, 10, 0)
+	if err != nil || month < 1 || month > 12 {
+		return date{}, fmt.Errorf("bad month: %v", m)
+	}
+	return date{
+		Year:  year(y64),
+		Month: time.Month(month),
+	}, nil
 }
