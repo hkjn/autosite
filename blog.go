@@ -56,22 +56,7 @@ func NewBlog(title, glob, live string, articleTmpls []string, listingTmpls []str
 
 // blog is a type of autosite.
 type blog struct {
-	s site // backing site.
-}
-
-// Register registers the HTTP handlers for the blog.
-func (b *blog) Register() {
-	b.s.Register()
-}
-
-// ChangeURI changes the URI a page will be served on.
-func (b *blog) ChangeURI(uri, newURI string) {
-	b.s.ChangeURI(uri, newURI)
-}
-
-// AddRedirect registers an URI that redirects.
-func (b *blog) AddRedirect(uri, newURI string) {
-	b.s.AddRedirect(uri, newURI)
+	site // backing site
 }
 
 // pageData is the data needed to serve a listing page.
@@ -108,14 +93,14 @@ func (b *blog) addListing(uri string, tfmt string, p posts, listingTmpls []strin
 		TimeUnit: tfmt,
 		Posts:    p,
 	}
-	b.s.addPage(uri, date{}, data, listingTmpls)
+	b.site.addPage(uri, date{}, data, listingTmpls)
 }
 
 // byMonth accumulates a map of year -> month -> posts.
 func (b blog) listingData() listingData {
 	byDate := make(map[date]posts)
 	byYear := make(map[year]posts)
-	for uri, p := range b.s.pages {
+	for uri, p := range b.site.pages {
 		parts := strings.Split(uri, "/")
 		d, err := getDate(parts[1], parts[2])
 		if err != nil {
