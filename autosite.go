@@ -104,6 +104,7 @@ func (s *site) AddRedirect(uri, redirectURI string) {
 		Title:       s.title,
 		URI:         uri,
 		redirectURI: redirectURI,
+		logger:      s.logger,
 	}
 	log.Printf("added redirect on %s to %s\n", uri, redirectURI)
 }
