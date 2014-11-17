@@ -40,6 +40,7 @@ package autosite
 
 import (
 	"fmt"
+	"html/template"
 	"log"
 	"sort"
 	"strings"
@@ -48,8 +49,8 @@ import (
 // NewBlog creates a new blog.
 //
 // NewBlog panics on errors reading templates.
-func NewBlog(title, glob, live string, articleTmpls []string, listingTmpls []string, logger LoggerFunc, isLive bool) Site {
-	b := blog{internalNew(title, glob, live, articleTmpls, logger, isLive)}
+func NewBlog(title, glob, live string, articleTmpls []string, listingTmpls []string, logger LoggerFunc, isLive bool, tmplFuncs template.FuncMap) Site {
+	b := blog{internalNew(title, glob, live, articleTmpls, logger, isLive, tmplFuncs)}
 	b.addHandlers(listingTmpls)
 	return &b
 }

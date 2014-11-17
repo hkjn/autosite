@@ -17,6 +17,9 @@
 //       return appengine.NewContext(r)
 //     },
 //     !appengine.IsDevAppServer(),
+//     template.FuncMap{
+//       "live": func() bool { !appengine.IsDevAppServer() }
+//     },
 //   )
 //   mysite.Register()
 //
@@ -25,16 +28,14 @@
 // package, also using "base.tmpl" and "other.tmpl" to compile the
 // templates for rendering those pages.
 //
+// The template functions specified are are available within templates, in addition
+// to the built-in ones. In the example above, {{live}} could be used.
+//
 // The following data is available within each template:
 //   {{.Title}}: The <title> of the page.
 //   {{.Date.Year}}, {{.Date.Month}}: Year and month that the page was
 //      published, if file pattern includes it.
 //   {{.URI}}: URI to the page.
-//
-// The following functions are available within templates, in addition
-// to the usual ones:
-//   {{live}}: Whether the page is live, via !appengine.IsDevAppServer().
-//   {{domain}}: When live, the live domain of the page, otherwise empty string.
 package autosite // import "hkjn.me/autosite"
 
 import (
@@ -46,30 +47,28 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"appengine"
 )
 
-// BaseTemplate is the name of the top-level template to invoke for each page.
-var BaseTemplate = "base"
+var BaseTemplate = "base" // name of top-level template to invoke for each page
 
 // New creates a new autosite.
 //
 // New panics on errors reading templates.
-func New(title, glob, liveDomain string, templates []string, logger LoggerFunc, isLive bool) Site {
-	s := internalNew(title, glob, liveDomain, templates, logger, isLive)
+func New(title, glob, liveDomain string, templates []string, logger LoggerFunc, isLive bool, tmplFuncs template.FuncMap) Site {
+	s := internalNew(title, glob, liveDomain, templates, logger, isLive, tmplFuncs)
 	return &s
 }
 
 // internalNew creates the concrete site.
-func internalNew(title, glob, liveDomain string, templates []string, logger LoggerFunc, isLive bool) site {
+func internalNew(title, glob, liveDomain string, templates []string, logger LoggerFunc, isLive bool, tmplFuncs template.FuncMap) site {
 	s := site{
-		title:      title,
 		liveDomain: liveDomain,
+		title:      title,
 		glob:       glob,
 		templates:  templates,
-		logger:     logger,
 		isLive:     isLive,
+		logger:     logger,
+		tmplFuncs:  tmplFuncs,
 	}
 	err := s.read()
 	if err != nil {
@@ -110,7 +109,7 @@ func (s *site) AddRedirect(uri, redirectURI string) {
 }
 
 // Register registers the HTTP handlers for the site.
-func (s site) Register() {
+func (s *site) Register() {
 	for uri, p := range s.pages {
 		if s.isLive {
 			uri = fmt.Sprintf("%s%s", s.liveDomain, p.URI)
@@ -129,13 +128,14 @@ type Site interface {
 
 // site is a website representation.
 type site struct {
-	liveDomain string          // live domain
-	title      string          // title of the site, for HTML <head>
-	glob       string          // file glob for page templates
-	templates  []string        // templates needed for all endpoints
-	isLive     bool            // whether the site is live
-	logger     LoggerFunc      // func to retrieve logger
-	pages      map[string]page // URI -> page mapping
+	liveDomain string           // live domain of the site
+	title      string           // title of the site, for HTML <head>
+	glob       string           // file glob for page templates
+	templates  []string         // templates needed for all endpoints
+	isLive     bool             // whether the site is live
+	logger     LoggerFunc       // func to retrieve logger
+	pages      map[string]page  // URI -> page mapping
+	tmplFuncs  template.FuncMap // extra template funcs
 }
 
 // page is a HTML resource.
@@ -222,7 +222,7 @@ func (s *site) read() error {
 }
 
 // getFiles retrieves all pages' file paths from disk.
-func (s site) getFiles() ([]string, error) {
+func (s *site) getFiles() ([]string, error) {
 	paths, err := filepath.Glob(s.glob)
 	if err != nil {
 		return []string{}, err
@@ -267,27 +267,11 @@ func parsePath(p string) (uri string, d date, err error) {
 	return uri, d, nil
 }
 
-// getFuncs constructs a map for the extra template functions.
-func (s site) getFuncs() template.FuncMap {
-	isLive := func() bool {
-		return !appengine.IsDevAppServer()
-	}
-	return template.FuncMap{
-		"live": isLive,
-		"domain": func() string {
-			if isLive() {
-				return s.liveDomain
-			}
-			return ""
-		},
-	}
-}
-
 // addPage adds a page to the autosite.
 func (s *site) addPage(uri string, d date, data interface{}, tmpls []string) {
 	var t *template.Template
 	if len(tmpls) > 0 {
-		t = template.Must(template.New(BaseTemplate).Funcs(s.getFuncs()).ParseFiles(tmpls...))
+		t = template.Must(template.New(BaseTemplate).Funcs(s.tmplFuncs).ParseFiles(tmpls...))
 	}
 	s.pages[uri] = page{
 		Title:  s.title,
