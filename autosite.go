@@ -35,7 +35,7 @@
 // to the usual ones:
 //   {{live}}: Whether the page is live, via !appengine.IsDevAppServer().
 //   {{domain}}: When live, the live domain of the page, otherwise empty string.
-package autosite
+package autosite // import "hkjn.me/autosite"
 
 import (
 	"fmt"
