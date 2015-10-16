@@ -36,7 +36,7 @@
 //   {{.Date.Year}}, {{.Date.Month}}: Year and month that the page was
 //      published, if file pattern includes it.
 //   {{.URI}}: URI to the page.
-package autosite // import "hkjn.me/autosite"
+package autosite
 
 import (
 	"fmt"
