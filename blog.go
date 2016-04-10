@@ -49,6 +49,7 @@ import (
 // NewBlog creates a new blog.
 //
 // NewBlog panics on errors reading templates.
+// TODO(hkjn): Convert to ...Options() funcs.
 func NewBlog(title, glob, live string, articleTmpls []string, listingTmpls []string, logger LoggerFunc, isLive bool, tmplFuncs template.FuncMap) Site {
 	b := blog{internalNew(title, glob, live, articleTmpls, logger, isLive, tmplFuncs)}
 	b.addHandlers(listingTmpls)
